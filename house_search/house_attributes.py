@@ -4,7 +4,10 @@ from math import floor
 import googlemaps
 from dotenv import load_dotenv
 import os
+import re
 import sys
+
+OUTPUT_DIR = "locations"
 
 def main():
     """Prints elevation and travel times for an address or location 
@@ -43,7 +46,24 @@ def main():
         print("Try again: Specify an address as the script's argument")
         exit(1) 
 
+    if not os.path.exists(OUTPUT_DIR):
+        os.makedirs(OUTPUT_DIR)
+    filename = os.path.join(OUTPUT_DIR, re.sub(r'\W+', '_', address) + '.txt')
+
+    if os.path.exists(filename):
+        print("Existing data:\n")
+        with open(filename, "r") as file:
+            for line in file:
+                print(line.strip())
+
+        response = input("\nDo you want to overwrite it? y/N\n")
+        if response != "y":
+            print("Exiting ...")
+            exit(0)
+
     print(f"Collecting relevant data for {address} ...")
+
+    results = {}
 
     try:
         address_coord = get_coordinates(gmaps, address)
@@ -55,6 +75,7 @@ def main():
         elevation = floor(get_elevation_feet(gmaps, address_coord))
         print()
         print(f"Address Elevation: {elevation} feet")
+        results["Elevation"] = elevation
     except Exception as e:
         print (f"No elevation found {e}")
 
@@ -65,11 +86,19 @@ def main():
             duration = get_travel_time(gmaps, start=address_coord, destination=destinations[dest])
             if duration:
                 print(f"\t{dest}: {duration}")
+                results[dest] = duration
             else:
                 print(f"No route found to {destinations[dest]}")
 
     except Exception as e:
         print(f"Exception occured while calculating travel times: {e}")
+
+    notes = input("Enter notes\n")
+
+    with open(filename, "w") as file:
+        file.write(f"{address}\n*** {notes} ***\n")
+        for key in results:
+            file.write(f"{key}: {results[key]}\n")
 
 
 def get_coordinates(gmaps, address):
