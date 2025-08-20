@@ -96,7 +96,7 @@ def main():
     notes = input("Enter notes\n")
 
     with open(filename, "w") as file:
-        file.write(f"{address}\n*** {notes} ***\n")
+        file.write(f"{address}\n\n*** {notes} ***\n\n")
         for key in results:
             file.write(f"{key}: {results[key]}\n")
 
