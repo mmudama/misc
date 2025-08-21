@@ -62,7 +62,7 @@ func main() {
 
 	// spoiler: it's true
 	if cap(headSlice) == len(headSlice) {
-		fmt.Printf("Head Slice will create a new backing slice on append; append WILL NOT affect the Starting Slice\n")
+		fmt.Printf("Head Slice will create a new backing array on append; append WILL NOT affect the Starting Slice\n")
 	} else {
 		fmt.Printf("Head Slice can still grow; append WILL affect the Starting Slice\n")
 	}
@@ -78,7 +78,7 @@ func main() {
 	fmt.Println()
 
 	startingSlice[2] = 999
-	fmt.Printf("Changed the final element of the slice: %v\n", startingSlice)
+	fmt.Printf("Changed the final element of the Starting Slice: %v\n", startingSlice)
 	fmt.Printf("Head Slice is not affected: %v\n", headSlice)
 }
 
