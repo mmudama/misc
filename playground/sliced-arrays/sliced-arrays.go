@@ -1,5 +1,6 @@
 // Here we explore how manipulating slices and arrays can lead to unintuitive results
 // Slices are windows into arrays, until they're not
+// Author: Monique Mudama ; (c) 2025
 
 package main
 
@@ -57,6 +58,13 @@ func main() {
 	fmt.Printf("Capacities: Array - %d; Head Slice - %d; Tail Slice - %d\n", cap(startingArray), cap(headSlice), cap(tailSlice))
 	fmt.Println()
 
+	// spoiler: it's true
+	if cap(headSlice) == len(headSlice) {
+		fmt.Printf("Head Slice will create a new backing array on append; append WILL NOT affect the array\n")
+	} else {
+		fmt.Printf("Head Slice can still grow; append WILL affect the array\n")
+	}
+
 	headSlice = append(headSlice, 5)
 	fmt.Printf("Appended 5 to the Head Slice: %v\n", headSlice)
 
@@ -64,7 +72,12 @@ func main() {
 	// Golang doubles its allocation and copies its data to a new location. It's no longer just a window into the Array.
 	fmt.Printf(comparePointers("Array", "Head Slice", &startingArray[0], &headSlice[0]))
 	fmt.Printf("Capacities: Array - %d; Head Slice - %d; Tail Slice - %d\n", cap(startingArray), cap(headSlice), cap(tailSlice))
+	fmt.Printf("Array is not affected: %v\n", startingArray)
+	fmt.Println()
 
+	startingArray[2] = 999
+	fmt.Printf("Changed the final element of the array: %v\n", startingArray)
+	fmt.Printf("Head Slice is not affected: %v\n", headSlice)
 }
 
 func comparePointers(textA string, textB string, a *int, b *int) string {
