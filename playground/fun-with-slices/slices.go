@@ -1,5 +1,6 @@
 // Here we explore how manipulating slices can lead to unintuitive results
 // Slices are windows into slices, until they're not
+// Associated blog post: https://mmudama.github.io/posts/2025/fun-with-slices/
 // Author: Monique Mudama; (c) 2025
 
 package main
