@@ -1,0 +1,2 @@
+# Ignore any directory named bak and its contents
+**/bak/
