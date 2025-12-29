@@ -77,9 +77,6 @@ services:
         condition: service_started
     ports:
       - "8082:8081"
-    environment:
-      FLINK_PROPERTIES: >-
-        jobmanager.rpc.address: jobmanager
     volumes:
       - ./flink:/opt/flink/usrlib
 
@@ -89,10 +86,6 @@ services:
     command: taskmanager
     depends_on:
       - jobmanager
-    environment:
-      FLINK_PROPERTIES: >-
-        jobmanager.rpc.address: jobmanager
-        taskmanager.numberOfTaskSlots: 2
     volumes:
       - ./flink:/opt/flink/usrlib
 

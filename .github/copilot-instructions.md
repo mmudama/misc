@@ -1,0 +1,99 @@
+**Purpose**
+- **Brief:** This project explores common data technologies by creating an example pipeline using kafka, flink, avro, parquet, etc. It uses docker containers to separate concerns.
+
+
+**Big Picture**
+- **Components:** This repo implements a minimalist streaming pipeline consisting of Kafka (broker), Schema Registry, a containerized producer, and a Java-based Flink consumer.
+- **Image & orchestration:** Services are started with [docker-compose.yml](docker-compose.yml) which defines `kafka`, `schema-registry`, `producer`, `jobmanager`, and `taskmanager`. Two custom images: `local/procstat-producer:latest` and `local/flink-kafka:1.19.3`.
+
+**Data Flow & Key Files**
+- **Source:** `/proc/stat` parsed by the containerized producer at [bin/producer_procstat_avro_container.py](bin/producer_procstat_avro_container.py).
+- **Schema:** Avro schema at [bin/procstat_schema.avsc](bin/procstat_schema.avsc). Schema is automatically registered by producer on startup.
+- **Topic:** Producer writes to `procstat_snapshots`. Java Flink consumer reads from `procstat_snapshots`.
+- **Consumer:** Java-based Flink streaming job at [flink/java-consumer/src/main/java/local/pipeline/ProcstatConsumer.java](flink/java-consumer/src/main/java/local/pipeline/ProcstatConsumer.java) with Confluent Avro deserialization.
+
+**Project-specific conventions & patterns**
+- **Schema-first messages:** Producer uses Confluent Avro serializers with automatic schema registration. Subject convention: `<topic>-value`.
+- **Containerized producer:** Built from [docker_producer_image/Dockerfile](docker_producer_image/Dockerfile) with all Python dependencies baked in. Schema file copied into image.
+- **Flink deployment:** Custom image built from [docker_flink_image/flink-kafka.Dockerfile](docker_flink_image/flink-kafka.Dockerfile) with:
+  - Kafka connector JARs downloaded at build time
+  - Flink configuration (jobmanager address, memory settings) baked into image
+  - Auto-submit entrypoint script that waits for services and submits the consumer job on startup
+  - `./flink` mounted to `/opt/flink/usrlib` for the consumer JAR
+- **Java consumer:** Maven project at `flink/java-consumer/` builds a shaded JAR (`procstat-flink-consumer-0.1.0.jar`) with all dependencies included.
+
+**Essential developer workflows / commands**
+
+- **Start the stack:**
+
+```bash
+docker compose down 
+docker compose up -d
+docker ps
+```
+
+- **Create the Kafka topic** (manual, one-time setup):
+```bash
+# Download Kafka tools from https://kafka.apache.org/downloads
+kafka-topics.sh --bootstrap-server localhost:9092 --create --topic procstat_snapshots
+kafka-topics.sh --bootstrap-server localhost:9092 --list
+```
+
+- **Schema registration:** Automatic on producer startup, no manual steps needed.
+
+- **Rebuild Java consumer:**
+```bash
+cd flink/java-consumer
+mvn clean package
+cp target/procstat-flink-consumer-0.1.0.jar ../
+```
+
+- **View logs:**
+```bash
+docker logs producer
+docker logs jobmanager
+docker logs taskmanager
+```
+
+- **Check Flink dashboard:** http://localhost:8082
+
+**Integration points & dependencies**
+- **Confluent stack:** `confluentinc/cp-kafka:7.5.0` and `confluentinc/cp-schema-registry:7.5.0` in KRaft mode (no Zookeeper).
+- **Producer dependencies:** Python 3.11 with `confluent-kafka`, `fastavro`, `attrs`, `certifi`, `httpx`, `cachetools`, `authlib`.
+- **Flink consumer dependencies:** Maven-managed Java project with Flink 1.19.3, Kafka connector 3.3.0, Confluent Avro serializers 7.5.0.
+- **Healthchecks:** Kafka and Schema Registry have healthchecks; producer waits for both to be healthy before starting.
+
+**Common issues an agent should check for**
+- **Topic must exist:** Kafka topic `procstat_snapshots` must be created manually before first run.
+- **JAR location:** Flink expects consumer JAR at `/opt/flink/usrlib/procstat-flink-consumer-0.1.0.jar` (volume-mapped from `./flink/`).
+- **Timing:** Entrypoint script waits 20 seconds after JobManager starts for TaskManager to register slots before submitting job.
+- **Memory config:** Flink memory settings are baked into the Docker image; changes require rebuild.
+- **Java rebuild:** After modifying Java consumer code, must run `mvn package` and copy JAR to `flink/` directory, then restart containers.
+
+**Quick file pointers**
+- **Docker Compose:** [docker-compose.yml](docker-compose.yml)
+- **Producer:**
+  - Dockerfile: [docker_producer_image/Dockerfile](docker_producer_image/Dockerfile)
+  - Python script: [bin/producer_procstat_avro_container.py](bin/producer_procstat_avro_container.py)
+- **Avro schema:** [bin/procstat_schema.avsc](bin/procstat_schema.avsc)
+- **Flink:**
+  - Dockerfile: [docker_flink_image/flink-kafka.Dockerfile](docker_flink_image/flink-kafka.Dockerfile)
+  - Entrypoint: [docker_flink_image/entrypoint.sh](docker_flink_image/entrypoint.sh)
+- **Java Consumer:**
+  - POM: [flink/java-consumer/pom.xml](flink/java-consumer/pom.xml)
+  - Main class: [flink/java-consumer/src/main/java/local/pipeline/ProcstatConsumer.java](flink/java-consumer/src/main/java/local/pipeline/ProcstatConsumer.java)
+  - Avro deserializer: [flink/java-consumer/src/main/java/local/pipeline/AvroToJsonDeserializationSchema.java](flink/java-consumer/src/main/java/local/pipeline/AvroToJsonDeserializationSchema.java)
+  - Built JAR: [flink/procstat-flink-consumer-0.1.0.jar](flink/procstat-flink-consumer-0.1.0.jar) (generated, in .gitignore)
+
+**Architecture notes:**
+- All configuration baked into Docker images (no environment variable wrangling for Flink properties)
+- Auto-submit on startup eliminates manual job submission
+- Healthcheck-based dependencies ensure proper startup ordering
+- Volume mounts allow JAR updates without image rebuilds
+
+**Design decisions & gotchas:**
+- **Why config is baked into the Dockerfile:** We tried using `FLINK_PROPERTIES` environment variable with YAML multi-line strings (`|` and `>-` notation) but Flink's startup scripts don't parse them correctly - newlines get stripped or properties get concatenated. After multiple attempts (pipe notation, fold notation, environment variable arrays), we settled on writing configuration directly to `flink-conf.yaml` in the Dockerfile. This requires image rebuild for config changes but guarantees correct parsing.
+- **Why memory settings are required:** Flink 1.19.3 requires explicit memory configuration for both JobManager (`jobmanager.memory.process.size`) and TaskManager (`taskmanager.memory.process.size`). Without these, the containers fail to start with cryptic JVM parameter errors. We use 1600m for JobManager and 1728m for TaskManager.
+- **Why entrypoint waits 20 seconds:** The auto-submit script waits for JobManager REST API to be ready, then waits an additional 20 seconds for TaskManager to register its task slots. Without this delay, job submission fails with "no available slots" because the TaskManager hasn't connected yet. This is simpler than polling for slot availability.
+- **Why producer is containerized:** The original producer required pip installing dependencies on every container start. Baking dependencies into a custom image (`local/procstat-producer:latest`) makes startup faster and more reliable. The producer also handles schema registration automatically, eliminating manual curl commands.
+- **Why a custom Docker image for Flink:** The official Flink images require manual job submission via CLI or dashboard. Our custom image (`local/flink-kafka:1.19.3`) extends the base Flink image with: (1) Kafka connector JARs pre-downloaded at build time, (2) baked configuration in `flink-conf.yaml`, and (3) a custom `entrypoint.sh` that automatically submits the consumer job when JobManager starts. The entrypoint waits for the REST API to be ready, sleeps 20 seconds for TaskManager slot registration, then submits the JAR from `/opt/flink/usrlib/`. This eliminates manual steps and ensures the pipeline starts fully automatically with `docker compose up`. Without this approach, you'd need to manually run `flink run` commands every time you restart the cluster.
