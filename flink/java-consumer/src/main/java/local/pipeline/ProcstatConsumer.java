@@ -27,7 +27,10 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class ProcstatConsumer {
-    private static final String REGISTRY_URL = "http://schema-registry:8081";
+    private static final String REGISTRY_URL = System.getenv().getOrDefault("SCHEMA_REGISTRY_URL", "http://schema-registry:8081");
+    private static final String KAFKA_BOOTSTRAP_SERVERS = System.getenv().getOrDefault("KAFKA_BOOTSTRAP_SERVERS", "kafka:19092");
+    private static final String KAFKA_TOPIC = System.getenv().getOrDefault("KAFKA_TOPIC", "procstat_snapshots");
+    private static final String KAFKA_GROUP_ID = System.getenv().getOrDefault("KAFKA_GROUP_ID", "flink-java-consumer");
 
     /**
      * Main entry point for the ProcStat consumer Flink job.
@@ -41,9 +44,9 @@ public class ProcstatConsumer {
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
         KafkaSource<byte[]> source = KafkaSource.<byte[]>builder()
-                .setBootstrapServers("kafka:19092")
-                .setTopics("procstat_snapshots")
-                .setGroupId("flink-java-consumer")
+                .setBootstrapServers(KAFKA_BOOTSTRAP_SERVERS)
+                .setTopics(KAFKA_TOPIC)
+                .setGroupId(KAFKA_GROUP_ID)
                 .setStartingOffsets(OffsetsInitializer.earliest())
                 .setDeserializer(KafkaRecordDeserializationSchema.valueOnly(new ByteArrayValueDeserializationSchema()))
                 .build();

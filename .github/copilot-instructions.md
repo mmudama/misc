@@ -8,9 +8,9 @@
 
 **Data Flow & Key Files**
 - **Source:** `/proc/stat` parsed by the containerized producer at [bin/producer_procstat_avro_container.py](bin/producer_procstat_avro_container.py).
-- **Schema:** Avro schema at [bin/procstat_schema.avsc](bin/procstat_schema.avsc). Schema is automatically registered by producer on startup.
+- **Schema:** Avro schema at [bin/procstat_schema.avsc](bin/procstat_schema.avsc). Schema can be registered via `make setup` or is automatically registered by producer on startup.
 - **Topic:** Producer writes to `procstat_snapshots`. Java Flink consumer reads from `procstat_snapshots`.
-- **Consumer:** Java-based Flink streaming job at [flink/java-consumer/src/main/java/local/pipeline/ProcstatConsumer.java](flink/java-consumer/src/main/java/local/pipeline/ProcstatConsumer.java) with Confluent Avro deserialization.
+- **Consumer:** Java-based Flink streaming job at [flink/java-consumer/src/main/java/local/pipeline/ProcstatConsumer.java](flink/java-consumer/src/main/java/local/pipeline/ProcstatConsumer.java) with Confluent Avro deserialization. Reads Kafka/Schema Registry configuration from environment variables.
 
 **Project-specific conventions & patterns**
 - **Schema-first messages:** Producer uses Confluent Avro serializers with automatic schema registration. Subject convention: `<topic>-value`.
@@ -24,28 +24,28 @@
 
 **Essential developer workflows / commands**
 
-- **Start the stack:**
-
+- **Complete setup (first time):**
 ```bash
-docker compose down 
+make all              # Build Docker images and Java consumer
+docker compose up -d  # Start all containers
+make setup            # Create Kafka topic and register schema
+```
+
+- **Daily workflow:**
+```bash
+docker compose down
 docker compose up -d
-docker ps
 ```
 
-- **Create the Kafka topic** (manual, one-time setup):
+- **Rebuild Java consumer after code changes:**
 ```bash
-# Download Kafka tools from https://kafka.apache.org/downloads
-kafka-topics.sh --bootstrap-server localhost:9092 --create --topic procstat_snapshots
-kafka-topics.sh --bootstrap-server localhost:9092 --list
+make java-consumer    # or: cd flink/java-consumer && mvn clean package && cp target/procstat-flink-consumer-0.1.0.jar ../
+docker compose restart jobmanager taskmanager
 ```
 
-- **Schema registration:** Automatic on producer startup, no manual steps needed.
-
-- **Rebuild Java consumer:**
+- **Manual Kafka topic creation** (alternative to `make setup`):
 ```bash
-cd flink/java-consumer
-mvn clean package
-cp target/procstat-flink-consumer-0.1.0.jar ../
+docker exec kafka kafka-topics --bootstrap-server localhost:9092 --create --topic procstat_snapshots
 ```
 
 - **View logs:**
@@ -61,16 +61,19 @@ docker logs taskmanager
 - **Confluent stack:** `confluentinc/cp-kafka:7.5.0` and `confluentinc/cp-schema-registry:7.5.0` in KRaft mode (no Zookeeper).
 - **Producer dependencies:** Python 3.11 with `confluent-kafka`, `fastavro`, `attrs`, `certifi`, `httpx`, `cachetools`, `authlib`.
 - **Flink consumer dependencies:** Maven-managed Java project with Flink 1.19.3, Kafka connector 3.3.0, Confluent Avro serializers 7.5.0.
+- **Build tools:** `make` for orchestrating build steps, `jq` for schema registration (required by `make setup`).
 - **Healthchecks:** Kafka and Schema Registry have healthchecks; producer waits for both to be healthy before starting.
 
 **Common issues an agent should check for**
-- **Topic must exist:** Kafka topic `procstat_snapshots` must be created manually before first run.
-- **JAR location:** Flink expects consumer JAR at `/opt/flink/usrlib/procstat-flink-consumer-0.1.0.jar` (volume-mapped from `./flink/`).
+- **Topic must exist:** Kafka topic `procstat_snapshots` must be created before producer/consumer start. Use `make setup` after starting containers.
+- **JAR location:** Flink expects consumer JAR at `/opt/flink/usrlib/procstat-flink-consumer-0.1.0.jar` (volume-mapped from `./flink/`). Build with `make java-consumer`.
 - **Timing:** Entrypoint script waits 20 seconds after JobManager starts for TaskManager to register slots before submitting job.
 - **Memory config:** Flink memory settings are baked into the Docker image; changes require rebuild.
-- **Java rebuild:** After modifying Java consumer code, must run `mvn package` and copy JAR to `flink/` directory, then restart containers.
+- **Java rebuild:** After modifying Java consumer code, run `make java-consumer` then restart jobmanager/taskmanager containers.
+- **jq dependency:** `make setup` requires `jq` for schema registration. Install via `sudo apt install jq` (Linux) or `brew install jq` (Mac).
 
 **Quick file pointers**
+- **Build orchestration:** [Makefile](Makefile)
 - **Docker Compose:** [docker-compose.yml](docker-compose.yml)
 - **Producer:**
   - Dockerfile: [docker_producer_image/Dockerfile](docker_producer_image/Dockerfile)
