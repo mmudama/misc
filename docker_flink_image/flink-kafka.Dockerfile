@@ -15,5 +15,5 @@ RUN echo "jobmanager.rpc.address: jobmanager" >> /opt/flink/conf/flink-conf.yaml
 COPY entrypoint.sh /opt/flink/entrypoint.sh
 RUN chmod +x /opt/flink/entrypoint.sh
 
-# Keep Java consumer jar mounted via compose volumes
+# Java consumer JAR will be mounted via compose volumes
 ENTRYPOINT ["/opt/flink/entrypoint.sh"]

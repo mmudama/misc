@@ -6,11 +6,20 @@
 - **Components:** This repo implements a minimalist streaming pipeline consisting of Kafka (broker), Schema Registry, a containerized producer, and a Java-based Flink consumer.
 - **Image & orchestration:** Services are started with [docker-compose.yml](docker-compose.yml) which defines `kafka`, `schema-registry`, `producer`, `jobmanager`, and `taskmanager`. Two custom images: `local/procstat-producer:latest` and `local/flink-kafka:1.19.3`.
 
+**Assumptions**
+While docker commands can be run on any platform, the Makefile and instructions assume that you are running commands in a Posix-compatible (Unix) shell. It's been tested on WSL Ubuntu on Windows. `Make` in particular does not get along with PowerShell or CMD.
+
 **Data Flow & Key Files**
 - **Source:** `/proc/stat` parsed by the containerized producer at [bin/producer_procstat_avro_container.py](bin/producer_procstat_avro_container.py).
 - **Schema:** Avro schema at [bin/procstat_schema.avsc](bin/procstat_schema.avsc). Schema can be registered via `make setup` or is automatically registered by producer on startup.
-- **Topic:** Producer writes to `procstat_snapshots`. Java Flink consumer reads from `procstat_snapshots`.
-- **Consumer:** Java-based Flink streaming job at [flink/java-consumer/src/main/java/local/pipeline/ProcstatConsumer.java](flink/java-consumer/src/main/java/local/pipeline/ProcstatConsumer.java) with Confluent Avro deserialization. Reads Kafka/Schema Registry configuration from environment variables.
+- **Topics:** 
+  - `procstat_snapshots` - Raw /proc/stat snapshots in Confluent Avro format (producer → enrichment consumer)
+  - `procstat_metrics` - CPU utilization deltas in JSON format (enrichment consumer output)
+- **Consumer:** Java-based Flink streaming job at [flink/java-consumer/src/main/java/local/pipeline/CpuEnrichmentConsumer.java](flink/java-consumer/src/main/java/local/pipeline/CpuEnrichmentConsumer.java) that:
+  - Reads Confluent Avro from `procstat_snapshots`
+  - Calculates CPU utilization deltas (user%, system%, idle%, iowait%, total_busy%)
+  - Uses keyed state (keyed by hostname) to maintain previous snapshot per host
+  - Writes enriched JSON metrics to `procstat_metrics`
 
 **Project-specific conventions & patterns**
 - **Schema-first messages:** Producer uses Confluent Avro serializers with automatic schema registration. Subject convention: `<topic>-value`.
@@ -23,6 +32,40 @@
 - **Java consumer:** Maven project at `flink/java-consumer/` builds a shaded JAR (`procstat-flink-consumer-0.1.0.jar`) with all dependencies included.
 
 **Essential developer workflows / commands**
+
+- **Complete rebuild and smoke test (clean slate):**
+```bash
+# 1. Tear down everything
+# Warning - this removes Kafka topics and their contents. If you don't want to do this, omit -v
+docker compose down -v
+
+# 2. Clean build artifacts
+make clean
+
+# 3. Rebuild Docker images and Java consumer
+make all
+
+# 4. Start all services
+docker compose up -d
+
+# 5. Wait for services to be healthy (~30 seconds)
+docker compose ps
+
+# 6. Create Kafka topics and register schema
+# These will probably be created automatically by the producer or the flink consumer if you wait a few minutes, but this ensures that they're present.
+make setup
+
+# 7. Wait for Flink job submission (~30 seconds)
+docker logs jobmanager | grep "submitted"
+
+# 8. Verify producer is writing
+docker exec kafka kafka-console-consumer --bootstrap-server localhost:9092 --topic procstat_snapshots --from-beginning --max-messages 1 | grep Processed
+
+# 9. Verify enrichment consumer is writing metrics
+docker exec kafka kafka-console-consumer --bootstrap-server localhost:9092 --topic procstat_metrics --from-beginning --max-messages 1 | grep Processed
+
+# Expected output: JSON with timestamp, time_delta_ms, and cpu_metrics array with percentages
+```
 
 - **Complete setup (first time):**
 ```bash
@@ -84,7 +127,7 @@ docker logs taskmanager
   - Entrypoint: [docker_flink_image/entrypoint.sh](docker_flink_image/entrypoint.sh)
 - **Java Consumer:**
   - POM: [flink/java-consumer/pom.xml](flink/java-consumer/pom.xml)
-  - Main class: [flink/java-consumer/src/main/java/local/pipeline/ProcstatConsumer.java](flink/java-consumer/src/main/java/local/pipeline/ProcstatConsumer.java)
+  - Main class: [flink/java-consumer/src/main/java/local/pipeline/CpuEnrichmentConsumer.java](flink/java-consumer/src/main/java/local/pipeline/CpuEnrichmentConsumer.java)
   - Avro deserializer: [flink/java-consumer/src/main/java/local/pipeline/AvroToJsonDeserializationSchema.java](flink/java-consumer/src/main/java/local/pipeline/AvroToJsonDeserializationSchema.java)
   - Built JAR: [flink/procstat-flink-consumer-0.1.0.jar](flink/procstat-flink-consumer-0.1.0.jar) (generated, in .gitignore)
 

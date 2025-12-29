@@ -18,8 +18,8 @@ if [ "$ROLE" = "jobmanager" ]; then
         if curl -s http://${REST_HOST}:${REST_PORT}/v1/overview > /dev/null 2>&1; then
             echo "JobManager is ready. Waiting for TaskManager to register slots..."
             sleep 20  # Wait for TaskManager to register and producer to stabilize
-            echo "Submitting consumer job..."
-            /opt/flink/bin/flink run -m ${REST_HOST}:${REST_PORT} /opt/flink/usrlib/procstat-flink-consumer-0.1.0.jar
+            echo "Submitting Java consumer job..."
+            /opt/flink/bin/flink run /opt/flink/usrlib/procstat-flink-consumer-0.1.0.jar
             echo "Consumer job submitted."
             break
         fi

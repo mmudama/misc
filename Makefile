@@ -1,27 +1,28 @@
-.PHONY: all setup clean create-kafka-topic register-schema java-consumer docker-images check-kafka check-schema-registry help
+.PHONY: all setup clean create-kafka-topic create-metrics-topic register-schema java-consumer docker-images check-kafka check-schema-registry help
 
 # Default target: build everything (run BEFORE docker compose up)
 all: docker-images java-consumer
 
 # Setup target: configure runtime (run AFTER docker compose up)
-setup: create-kafka-topic register-schema
+setup: create-kafka-topic create-metrics-topic register-schema
 
 # Help target
 help:
 	@echo "Available targets:"
-	@echo "  all                - Build Docker images and Java consumer (run BEFORE 'docker compose up')"
-	@echo "  setup              - Create Kafka topic and register schema (run AFTER 'docker compose up')"
-	@echo "  docker-images      - Build custom Docker images (producer and Flink)"
-	@echo "  java-consumer      - Build Java consumer JAR"
-	@echo "  create-kafka-topic - Create Kafka topic (requires containers running)"
-	@echo "  register-schema    - Register Avro schema with Schema Registry (requires containers running)"
-	@echo "  clean              - Remove build artifacts"
-	@echo "  help               - Show this help message"
+	@echo "  all                  - Build Docker images and Java consumer (run BEFORE 'docker compose up')"
+	@echo "  setup                - Create Kafka topics and register schema (run AFTER 'docker compose up')"
+	@echo "  docker-images        - Build custom Docker images (producer and Flink)"
+	@echo "  java-consumer        - Build Java consumer JAR"
+	@echo "  create-kafka-topic   - Create procstat_snapshots topic (requires containers running)"
+	@echo "  create-metrics-topic - Create procstat_metrics topic (requires containers running)"
+	@echo "  register-schema      - Register Avro schema with Schema Registry (requires containers running)"
+	@echo "  clean                - Remove build artifacts"
+	@echo "  help                 - Show this help message"
 	@echo ""
 	@echo "Typical workflow:"
 	@echo "  1. make all              # Build everything"
 	@echo "  2. docker compose up -d  # Start containers"
-	@echo "  3. make setup            # Configure Kafka topic and schema"
+	@echo "  3. make setup            # Configure Kafka topics and schema"
 
 # Build Docker images if Dockerfiles have changed
 docker-images: docker_producer_image/Dockerfile docker_flink_image/flink-kafka.Dockerfile
@@ -32,19 +33,28 @@ docker-images: docker_producer_image/Dockerfile docker_flink_image/flink-kafka.D
 # Build Java consumer JAR if source files have changed
 java-consumer: flink/procstat-flink-consumer-0.1.0.jar
 
-flink/procstat-flink-consumer-0.1.0.jar: flink/java-consumer/pom.xml flink/java-consumer/src/main/java/local/pipeline/ProcstatConsumer.java flink/java-consumer/src/main/java/local/pipeline/AvroToJsonDeserializationSchema.java
+flink/procstat-flink-consumer-0.1.0.jar: flink/java-consumer/pom.xml flink/java-consumer/src/main/java/local/pipeline/CpuEnrichmentConsumer.java flink/java-consumer/src/main/java/local/pipeline/AvroToJsonDeserializationSchema.java
 	@echo "Building Java consumer JAR..."
 	cd flink/java-consumer && mvn clean package
 	cp flink/java-consumer/target/procstat-flink-consumer-0.1.0.jar flink/
 	@echo "Java consumer JAR built successfully."
 
-# Create Kafka topic (only if Kafka is running)
+# Create procstat_snapshots Kafka topic (only if Kafka is running)
 create-kafka-topic: check-kafka
 	@echo "Checking if Kafka topic exists..."
 	@docker exec kafka kafka-topics --bootstrap-server localhost:9092 --list 2>/dev/null | grep -q '^procstat_snapshots$$' && echo "Topic 'procstat_snapshots' already exists." || ( \
 		echo "Creating Kafka topic 'procstat_snapshots'..." && \
 		docker exec kafka kafka-topics --bootstrap-server localhost:9092 --create --topic procstat_snapshots --partitions 1 --replication-factor 1 && \
 		echo "Topic created successfully." \
+	)
+
+# Create procstat_metrics Kafka topic (only if Kafka is running)
+create-metrics-topic: check-kafka
+	@echo "Checking if metrics topic exists..."
+	@docker exec kafka kafka-topics --bootstrap-server localhost:9092 --list 2>/dev/null | grep -q '^procstat_metrics$$' && echo "Topic 'procstat_metrics' already exists." || ( \
+		echo "Creating Kafka topic 'procstat_metrics'..." && \
+		docker exec kafka kafka-topics --bootstrap-server localhost:9092 --create --topic procstat_metrics --partitions 1 --replication-factor 1 && \
+		echo "Metrics topic created successfully." \
 	)
 
 # Check if Kafka container is running
@@ -78,7 +88,7 @@ register-schema: check-schema-registry bin/procstat_schema.avsc
 # Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
-	rm -rf flink/java-consumer/target
-	rm -f flink/procstat-flink-consumer-0.1.0.jar
-	rm -f flink/java-consumer/dependency-reduced-pom.xml
+	@rm -rf flink/java-consumer/target 2>/dev/null || true
+	@rm -f flink/procstat-flink-consumer-0.1.0.jar 2>/dev/null || true
+	@rm -f flink/java-consumer/dependency-reduced-pom.xml 2>/dev/null || true
 	@echo "Clean complete."
