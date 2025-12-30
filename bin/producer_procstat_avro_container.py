@@ -72,7 +72,7 @@ def main():
     registry_url = os.getenv("SCHEMA_REGISTRY_URL", "http://schema-registry:8081")
     bootstrap = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:19092")
     topic = os.getenv("TOPIC", "procstat_snapshots")
-    sleep_seconds = float(os.getenv("SLEEP_SECONDS", "1"))
+    sleep_seconds = float(os.getenv("SLEEP_SECONDS", "60"))
 
     schema_registry = SchemaRegistryClient({"url": registry_url})
 

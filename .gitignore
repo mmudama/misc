@@ -8,3 +8,6 @@ dependency-reduced-pom.xml
 # Generated JAR files
 flink/*.jar
 docker_flink_image/*.jar
+
+#pipeline output
+output/*

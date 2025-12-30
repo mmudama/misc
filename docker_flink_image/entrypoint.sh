@@ -18,9 +18,15 @@ if [ "$ROLE" = "jobmanager" ]; then
         if curl -s http://${REST_HOST}:${REST_PORT}/v1/overview > /dev/null 2>&1; then
             echo "JobManager is ready. Waiting for TaskManager to register slots..."
             sleep 20  # Wait for TaskManager to register and producer to stabilize
-            echo "Submitting Java consumer job..."
-            /opt/flink/bin/flink run /opt/flink/usrlib/procstat-flink-consumer-0.1.0.jar
-            echo "Consumer job submitted."
+            
+            echo "Submitting CPU enrichment consumer job..."
+            /opt/flink/bin/flink run --detached /opt/flink/usrlib/procstat-flink-consumer-0.1.0.jar
+            echo "CPU enrichment consumer submitted."
+            
+            echo "Submitting Parquet writer consumer job..."
+            /opt/flink/bin/flink run --detached --class local.pipeline.ParquetWriterConsumer /opt/flink/usrlib/procstat-flink-consumer-0.1.0.jar
+            echo "Parquet writer consumer submitted."
+            
             break
         fi
         echo "Waiting for JobManager... ($i/60)"
