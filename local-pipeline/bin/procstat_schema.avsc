@@ -1,0 +1,68 @@
+{
+  "type": "record",
+  "name": "ProcStatSnapshot",
+  "namespace": "local.metrics",
+  "fields": [
+    {
+      "name": "timestamp",
+      "type": "long"
+    },
+    {
+      "name": "cpus",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "CpuStat",
+          "fields": [
+            { "name": "id", "type": "string" },
+            { "name": "user", "type": "long" },
+            { "name": "nice", "type": "long" },
+            { "name": "system", "type": "long" },
+            { "name": "idle", "type": "long" },
+            { "name": "iowait", "type": "long" },
+            { "name": "irq", "type": "long" },
+            { "name": "softirq", "type": "long" },
+            { "name": "steal", "type": "long" },
+            { "name": "guest", "type": "long" },
+            { "name": "guest_nice", "type": "long" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "intr",
+      "type": {
+        "type": "array",
+        "items": "long"
+      }
+    },
+    {
+      "name": "softirq",
+      "type": {
+        "type": "array",
+        "items": "long"
+      }
+    },
+    {
+      "name": "ctxt",
+      "type": "long"
+    },
+    {
+      "name": "btime",
+      "type": "long"
+    },
+    {
+      "name": "processes",
+      "type": "long"
+    },
+    {
+      "name": "procs_running",
+      "type": "long"
+    },
+    {
+      "name": "procs_blocked",
+      "type": "long"
+    }
+  ]
+}

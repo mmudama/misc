@@ -1,0 +1,3 @@
+# replace CRLF with LF on checkin when a file is assumed to be a text file
+# obviously this could turn out poorly if git is wrong
+* text=auto
