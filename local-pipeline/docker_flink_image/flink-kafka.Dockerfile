@@ -13,7 +13,8 @@ RUN echo "jobmanager.rpc.address: jobmanager" >> /opt/flink/conf/flink-conf.yaml
 
 # Copy custom entrypoint script for auto-submitting consumer job on JobManager startup
 COPY entrypoint.sh /opt/flink/entrypoint.sh
-RUN chmod +x /opt/flink/entrypoint.sh
+# Convert Windows line endings to Unix and make executable
+RUN sed -i 's/\r$//' /opt/flink/entrypoint.sh && chmod +x /opt/flink/entrypoint.sh
 
 # Java consumer JAR will be mounted via compose volumes
 ENTRYPOINT ["/opt/flink/entrypoint.sh"]

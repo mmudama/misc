@@ -81,6 +81,7 @@ clean:
 	@echo "Cleaning build artifacts..."
 	@rm -rf flink/java-consumer/target
 	@rm -f flink/procstat-flink-consumer-0.1.0.jar
+	@docker image rm local/flink-kafka:1.19.3
 	@echo "Clean complete."
 
 # Build shaded Flink consumer JAR
