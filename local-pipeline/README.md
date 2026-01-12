@@ -10,12 +10,10 @@ It's also been an experiment to see how much development and integration work I 
 
 ```mermaid
 graph LR
-    procstat["/proc/stat<br/>(Host System)"]
-    producer["Producer Container<br/>(Python)"]
+    producer["Producer<br/> (polls /proc/stat)"]
     kafka["Kafka Broker<br/>(Port 9092)"]
     registry["Schema Registry<br/>(Port 8081)"]
     
-    procstat -->|Polls every 1s| producer
     producer -->|Registers Schema| registry
     producer -->|Publishes Avro| kafka
     
@@ -25,10 +23,6 @@ graph LR
     
     parquet -->|Writes Columnar| output["./output/<br/>(Parquet Files)"]
     
-    style producer fill:#4A90E2
-    style enrichment fill:#7ED321
-    style parquet fill:#F5A623
-    style output fill:#BD10E0
 ```
 
 ## Assumptions
@@ -70,5 +64,49 @@ docker exec kafka kafka-console-consumer --bootstrap-server localhost:9092 --top
 docker exec kafka kafka-console-consumer --bootstrap-server localhost:9092 --topic procstat_metrics --from-beginning --max-messages 1 | grep Processed
 
 # Expected output: JSON with timestamp, time_delta_ms, and cpu_metrics array with percentages
+```
+
+## Useful Stuff
+```bash
+docker compose down # leaves volumes in place
+docker compose up -d
+docker ps
+
+#use venv for python because ubuntu is snotty about pip
+source ~/venv/bin/activate
+
+#list kafka topics
+kafka-topics.sh --bootstrap-server localhost:9092 --list
+
+```
+
+* Flink dashboard (in browser): http://localhost:8082
 
 
+- **Complete setup (first time):**
+```bash
+make all              # Build Docker images and Java consumer
+docker compose up -d  # Start all containers
+make setup            # Create Kafka topic and register schema
+```
+
+- **Daily workflow:**
+```bash
+docker compose down
+docker compose up -d
+```
+
+- **Rebuild Java consumer after code changes:**
+```bash
+make java-consumer    # or: cd flink/java-consumer && mvn clean package && cp target/procstat-flink-consumer-0.1.0.jar ../
+docker compose restart jobmanager taskmanager
+```
+
+- **View logs:**
+```bash
+docker logs producer
+docker logs jobmanager
+docker logs taskmanager
+```
+
+- **Check Flink dashboard:** http://localhost:8082
