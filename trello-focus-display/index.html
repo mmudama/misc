@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Focus</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #0a0a0a;
+    overflow: hidden;
+  }
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  #card {
+    color: #eee;
+    font-size: 7vw;
+    font-weight: 600;
+    text-align: center;
+    max-width: 90vw;
+    line-height: 1.25;
+    word-wrap: break-word;
+  }
+  #card.message {
+    color: #666;
+    font-size: 2.2vw;
+    font-weight: 400;
+  }
+  #indicator {
+    position: fixed;
+    bottom: 1.2em;
+    right: 1.4em;
+    color: #3a3a3a;
+    font-size: 0.9em;
+    font-family: monospace;
+    user-select: none;
+  }
+</style>
+</head>
+<body>
+  <div id="card"></div>
+  <div id="indicator"></div>
+
+  <script src="config.js"></script>
+  <script>
+  (function () {
+    "use strict";
+
+    var cardEl = document.getElementById("card");
+    var indicatorEl = document.getElementById("indicator");
+
+    var state = {
+      cards: [],
+      index: 0,
+      currentCardId: null
+    };
+    var completing = false;
+    var refreshTimer = null;
+
+    function validateConfig(cfg) {
+      if (!cfg) return "Missing config.js (copy config.example.js to config.js and fill it in)";
+      var problems = [];
+      if (!cfg.apiKey) problems.push("apiKey");
+      if (!cfg.token) problems.push("token");
+      if (!cfg.listId) problems.push("listId");
+      var validModes = ["move", "dueComplete", "dueCompleteBottom", "archive"];
+      if (validModes.indexOf(cfg.completeMode) === -1) {
+        problems.push("completeMode (must be move, dueComplete, dueCompleteBottom, or archive)");
+      } else if (cfg.completeMode === "move" && !cfg.doneListId) {
+        problems.push("doneListId");
+      }
+      if (problems.length > 0) {
+        return "Missing/invalid config field(s): " + problems.join(", ");
+      }
+      return null;
+    }
+
+    function showMessage(text) {
+      cardEl.textContent = text;
+      cardEl.className = "message";
+      indicatorEl.textContent = "";
+    }
+
+    function showCard(card, total, pos) {
+      cardEl.textContent = card.name;
+      cardEl.className = "";
+      indicatorEl.textContent = (pos + 1) + " / " + total;
+    }
+
+    function render() {
+      if (state.cards.length === 0) {
+        showMessage("Nothing here");
+        return;
+      }
+      if (state.index < 0) state.index = 0;
+      if (state.index > state.cards.length - 1) state.index = state.cards.length - 1;
+      state.currentCardId = state.cards[state.index].id;
+      showCard(state.cards[state.index], state.cards.length, state.index);
+    }
+
+    function processCards(raw, cfg) {
+      var cards = raw;
+      if (cfg.completeMode === "dueComplete" || cfg.completeMode === "dueCompleteBottom") {
+        cards = cards.filter(function (c) { return !c.dueComplete; });
+      }
+      return cards.slice(0, cfg.topN);
+    }
+
+    function fetchCards(cfg) {
+      var url = "https://api.trello.com/1/lists/" + encodeURIComponent(cfg.listId) +
+        "/cards?key=" + encodeURIComponent(cfg.apiKey) + "&token=" + encodeURIComponent(cfg.token);
+      return fetch(url).then(function (res) {
+        if (!res.ok) {
+          if (res.status === 401) throw new Error("Unauthorized (401) - check apiKey/token");
+          throw new Error("Request failed (" + res.status + ")");
+        }
+        return res.json();
+      });
+    }
+
+    function completeCard(cfg, card) {
+      var params = "key=" + encodeURIComponent(cfg.apiKey) + "&token=" + encodeURIComponent(cfg.token);
+      if (cfg.completeMode === "move") {
+        params += "&idList=" + encodeURIComponent(cfg.doneListId);
+      } else if (cfg.completeMode === "dueComplete") {
+        params += "&dueComplete=true";
+      } else if (cfg.completeMode === "dueCompleteBottom") {
+        params += "&dueComplete=true&pos=bottom";
+      } else if (cfg.completeMode === "archive") {
+        params += "&closed=true";
+      }
+      var url = "https://api.trello.com/1/cards/" + encodeURIComponent(card.id) + "?" + params;
+      return fetch(url, { method: "PUT" }).then(function (res) {
+        if (!res.ok) {
+          if (res.status === 401) throw new Error("Unauthorized (401) - check apiKey/token");
+          throw new Error("Request failed (" + res.status + ")");
+        }
+      });
+    }
+
+    function load(cfg, preserveCardId) {
+      return fetchCards(cfg).then(function (raw) {
+        state.cards = processCards(raw, cfg);
+        if (preserveCardId) {
+          var idx = -1;
+          for (var i = 0; i < state.cards.length; i++) {
+            if (state.cards[i].id === preserveCardId) { idx = i; break; }
+          }
+          state.index = idx !== -1 ? idx : state.index;
+        }
+        render();
+      });
+    }
+
+    function scheduleRefresh(cfg) {
+      if (refreshTimer) clearInterval(refreshTimer);
+      if (!cfg.refreshSeconds || cfg.refreshSeconds <= 0) return;
+      refreshTimer = setInterval(function () {
+        load(cfg, state.currentCardId).catch(function (err) {
+          showMessage(err.message || "Error");
+        });
+      }, cfg.refreshSeconds * 1000);
+    }
+
+    function init() {
+      var cfg = window.FOCUS_CONFIG;
+      var error = validateConfig(cfg);
+      if (error) {
+        showMessage(error);
+        return;
+      }
+
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "ArrowRight") {
+          if (state.index < state.cards.length - 1) {
+            state.index++;
+            render();
+          }
+        } else if (e.key === "ArrowLeft") {
+          if (state.index > 0) {
+            state.index--;
+            render();
+          }
+        } else if (e.key && e.key.toLowerCase() === "c") {
+          if (completing) return;
+          if (state.cards.length === 0) return;
+          var card = state.cards[state.index];
+          completing = true;
+          completeCard(cfg, card).then(function () {
+            return load(cfg, null);
+          }).catch(function (err) {
+            showMessage(err.message || "Error");
+          }).then(function () {
+            completing = false;
+          });
+        }
+      });
+
+      load(cfg, null).catch(function (err) {
+        showMessage(err.message || "Error");
+      });
+      scheduleRefresh(cfg);
+    }
+
+    init();
+  })();
+  </script>
+</body>
+</html>
